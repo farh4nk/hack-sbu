@@ -162,19 +162,8 @@ const CameraView = () => {
   };
 
   const speakText = (text) => {
-    if (!text || text.trim() === '') return;
-    
-    window.speechSynthesis.cancel();
-    
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1.0;
-    utterance.pitch = 1.0;
-    utterance.volume = 1.0;
-    
-    utterance.onstart = () => setStatus('Speaking...');
-    utterance.onend = () => setStatus(mode === 'live' ? 'Monitoring...' : 'Ready');
-    
-    window.speechSynthesis.speak(utterance);
+    // Audio disabled for now
+    console.log('Would speak:', text);
   };
 
   const startLiveMode = async () => {
@@ -213,7 +202,6 @@ const CameraView = () => {
     }
     setMode(null);
     setStatus('Ready');
-    window.speechSynthesis.cancel();
     setDetections([]);
     stopCamera();
   };

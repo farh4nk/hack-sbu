@@ -57,7 +57,7 @@ const CameraView = () => {
       setStatus(`Analyzing (${userMode} mode)...`);
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      ctx.drawImage(videoRef, 0, 0, canvas.width, canvas.height);
       
       canvas.toBlob(async (blob) => {
         console.log("converting to blob!")

@@ -2,7 +2,7 @@
 # Real-time webcam detection + on-frame risk scoring display.
 from fastapi import File, UploadFile
 from return_json import detections_to_json
-
+from collections import defaultdict
 import cv2
 import numpy as np
 from ultralytics import YOLO
@@ -11,7 +11,7 @@ from risk_scoring import RiskScorer, Detection
 from google import genai
 
 client = genai.Client(api_key="AIzaSyAN3ntB04PpwJjawU4x5w_aWvBdTbE4wbI")
-
+'''
 def generate_local_summary(scored):
     if not scored:
         return "No objects detected."
@@ -37,10 +37,49 @@ def generate_local_summary(scored):
         return f"A {top.label} is {top.distance_bucket} on your {top.direction} side."
 
     return " ".join(phrases)
+'''
+def generate_local_summary(scored):
+    if not scored:
+        return "No objects detected."
 
+    
+    grouped = defaultdict(list)
+    for s in scored:
+        grouped[s.label].append(s)
+
+    sentences = []
+
+    for label, items in grouped.items():
+        items.sort(key=lambda x: x.priority, reverse=True)
+        count = len(items)
+        parts = []
+
+        for i, s in enumerate(items, start=1):
+            part = ""
+            if count > 1:
+                if i == 1:
+                    part += f"a {label}"
+                else:
+                    part += f"a {i}nd {label}" if i == 2 else f"a {i}th {label}"
+            else:
+                part += f"a {label}"
+
+            part += f" is {s.distance_bucket} on your {s.direction} side"
+            parts.append(part)
+
+        sentence = ", ".join(parts)
+        sentence = sentence[0].upper() + sentence[1:] + "."
+        sentences.append(sentence)
+
+    sentences.sort(key=lambda txt: (
+        "warning" in txt.lower(),
+        len(txt)
+    ), reverse=True)
+
+    return " ".join(sentences)
 
 async def live_detection_with_priority(model: YOLO, scorer: RiskScorer, frame):
-# Load YOLOv8 model (n = fastest; switch to 'yolov8s.pt' if you have GPU)
+
     print("workingggggg")
     # contents = await file.read()
 

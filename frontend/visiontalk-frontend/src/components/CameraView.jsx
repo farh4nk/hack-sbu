@@ -2,17 +2,9 @@ import React, { useRef, useState, useEffect } from 'react';
 
 const ELEVEN_API_KEY = "sk_c21de707cdac86954d314ea6395d3ca74120192983274c84";
 const ELEVEN_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"; 
-
-  const speakWithElevenLabs = async (text) => {
-    if (window.__ELEVEN_ACTIVE__) {
-  console.log("⏸ Skipping ElevenLabs: already active");
-  return;
-}
-
+const speakWithElevenLabs = async (text) => {
   try {
-    // mark ElevenLabs as active to pause browser speech
     window.__ELEVEN_ACTIVE__ = true;
-
     const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${ELEVEN_VOICE_ID}`, {
       method: "POST",
       headers: {
@@ -25,32 +17,21 @@ const ELEVEN_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
       }),
     });
 
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status} from ElevenLabs`);
-    }
-
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
+    await audio.play();
 
-    // flag off when playback ends
     audio.onended = () => {
+      window.__ELEVEN_ACTIVE__ = false;
       console.log("🎧 ElevenLabs finished speaking");
-      window.__ELEVEN_ACTIVE__ = false;
     };
-
-    // attempt to play audio
-    try {
-      await audio.play();
-    } catch (playErr) {
-      console.error("Audio playback error:", playErr);
-      window.__ELEVEN_ACTIVE__ = false;
-    }
   } catch (err) {
     console.error("ElevenLabs TTS error:", err);
     window.__ELEVEN_ACTIVE__ = false;
   }
 };
+
 
 
 // speech recognition
@@ -258,37 +239,59 @@ const CameraView = () => {
   };
 
   const startLiveMode = () => {
-    setMode('live');
-    setStatus('Live monitoring active');
-    
-    // Clear any existing interval
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
+  setMode('live');
+  setStatus('Live monitoring active');
+  console.log("🎥 Live mode started");
+
+  const analyzeNextFrame = async () => {
+    // Exit if live mode stopped
+    if (mode !== 'live') {
+      console.log("⏹ Live mode stopped");
+      return;
     }
-    
-    // Capture and analyze every 1 second
-    intervalRef.current = setInterval(async () => {
-      const frame = captureFrame();
-      if (!frame) return;
-      
-      const result = await analyzeFrame(frame, 'live');
-      
-      if (result?.narration) {
-        // Only speak if there's something important (backend filters this)
-        speakText(result.narration);
-      }
-    }, 2000); // 1 second interval (adjust as needed)
+
+    const frame = captureFrame();
+    if (!frame) {
+      console.warn("⚠️ No frame captured");
+      setTimeout(analyzeNextFrame, 1500);
+      return;
+    }
+
+    console.log("📸 Captured frame, sending for analysis...");
+    const result = await analyzeFrame(frame, 'live');
+
+    if (result?.summary) {
+      console.log("🗣️ Speaking:", result.summary);
+
+      // Mark ElevenLabs as active and narrate
+      window.__ELEVEN_ACTIVE__ = true;
+      await speakWithElevenLabs(result.summary);
+
+      // Poll until ElevenLabs is finished before analyzing next frame
+      const waitForSpeech = setInterval(() => {
+        if (!window.__ELEVEN_ACTIVE__) {
+          clearInterval(waitForSpeech);
+          analyzeNextFrame();
+        }
+      }, 500);
+    } else {
+      console.log("🔇 No summary, retrying soon...");
+      setTimeout(analyzeNextFrame, 1500);
+    }
   };
 
+  analyzeNextFrame(); // Kick off the first iteration
+};
+
+
+
   const stopLiveMode = () => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-    setMode(null);
-    setStatus('Ready');
-    window.speechSynthesis.cancel();
-  };
+  setMode(null);
+  setStatus('Ready');
+  window.speechSynthesis.cancel();
+  window.__ELEVEN_ACTIVE__ = false;
+};
+
 
    const explainScene = async () => {
     setMode('explain');

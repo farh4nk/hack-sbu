@@ -28,6 +28,7 @@ async def root():
     return {"message": "Hello World"}
 
 @app.post("/analyze")
+# decode base64 image
 async def analyze(data: ImageInput):
     try:
         img_data = data.image.split(",")[1]
@@ -36,27 +37,48 @@ async def analyze(data: ImageInput):
     img_bytes = base64.b64decode(img_data)
     img = Image.open(io.BytesIO(img_bytes))
 
+# yolov8 detection
     results = model.predict(np.array(img))
+    boxes = results[0].boxes
+    frame_w = results[0].orig_shape[1]
 
-    labels = []
+    def get_position(x, w, frame_w):
+        center_x = x + w / 2
+        if center_x < frame_w / 3:
+            return "left"
+        elif center_x > 2 * frame_w / 3:
+            return "right"
+        else:
+            return "center"
+        
 
-    for box in results[0].boxes:
+    detected = []
+
+    for box in boxes:
         cls_id = int(box.cls)
         label = results[0].names[cls_id]
-        labels.append(label)
+        x, y, w, h = box.xywh[0]
+        pos = get_position(x, w, frame_w)
+        detected.append((label, pos))
 
-    if not labels:
-        summary = "No objects detected."
+    positions = {"left": [], "center": [], "right": []}
+    for label, pos in detected:
+        positions[pos].append(label)
+    
+    parts = []
+    for side in ["left", "center", "right"]:
+        if positions[side]:
+            objs = ", ".join(set(positions[side]))
+            phrase = f'{objs} on the {side}'
+            parts.append(phrase)
 
+    if parts:
+        summary = ", ".join(parts)
     else:
-        unique = list(set(labels))
-        if len(unique) == 1:
-            summary = f"Detected one {unique[0]}"
-        else:
-            summary = f"Detected {', '.join(unique[:-1])}, and {unique[-1]}."
+        summary = "No recognizable objects detected."
 
     return {
-        "objects": labels,
+        "objects": detected,
         "summary": summary,
         "mode": data.mode
     }

@@ -1,16 +1,16 @@
 import React, { useRef, useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 const ELEVEN_API_KEY = "sk_c21de707cdac86954d314ea6395d3ca74120192983274c84";
 const ELEVEN_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"; 
 
-  const speakWithElevenLabs = async (text) => {
-    if (window.__ELEVEN_ACTIVE__) {
-  console.log("⏸ Skipping ElevenLabs: already active");
-  return;
-}
+const speakWithElevenLabs = async (text) => {
+  if (window.__ELEVEN_ACTIVE__) {
+    console.log("⏸ Skipping ElevenLabs: already active");
+    return;
+  }
 
   try {
-    // mark ElevenLabs as active to pause browser speech
     window.__ELEVEN_ACTIVE__ = true;
 
     const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${ELEVEN_VOICE_ID}`, {
@@ -33,13 +33,11 @@ const ELEVEN_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
 
-    // flag off when playback ends
     audio.onended = () => {
       console.log("🎧 ElevenLabs finished speaking");
       window.__ELEVEN_ACTIVE__ = false;
     };
 
-    // attempt to play audio
     try {
       await audio.play();
     } catch (playErr) {
@@ -52,8 +50,6 @@ const ELEVEN_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
   }
 };
 
-
-// speech recognition
 const listenForCommand = (callback) => {
   if (!("webkitSpeechRecognition" in window)) {
     console.error("Speech recognition not supported in this browser.");
@@ -73,7 +69,7 @@ const listenForCommand = (callback) => {
     else if (transcript.includes("snapshot") || transcript.includes("scene"))
       callback("snapshot");
     else {
-      speakWithElevenLabs("Sorry, I didn’t catch that. Please say live or snapshot.");
+      speakWithElevenLabs("Sorry, I didn't catch that. Please say live or snapshot.");
       setTimeout(() => listenForCommand(callback), 4000);
     }
   };
@@ -89,6 +85,7 @@ const listenForCommand = (callback) => {
 };
 
 const CameraView = () => {
+  const navigate = useNavigate();
   const videoRef = useRef(null);
   const intervalRef = useRef(null);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -100,7 +97,7 @@ const CameraView = () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { 
-          facingMode: 'environment', // Use back camera on mobile
+          facingMode: 'environment',
           width: { ideal: 640 },
           height: { ideal: 480 }
         }
@@ -137,7 +134,6 @@ const CameraView = () => {
     const ctx = canvas.getContext('2d');
     ctx.drawImage(videoRef.current, 0, 0);
     
-    // Return base64 image (JPEG format, 0.8 quality for compression)
     return canvas.toDataURL('image/jpeg', 0.8);
   };
 
@@ -145,7 +141,6 @@ const CameraView = () => {
     try {
       setStatus(`Analyzing (${userMode} mode)...`);
       const canvas = document.createElement('canvas');
-      // Ensure canvas matches the video dimensions
       canvas.width = videoRef.current.videoWidth;
       canvas.height = videoRef.current.videoHeight;
       const ctx = canvas.getContext('2d');
@@ -157,10 +152,9 @@ const CameraView = () => {
         formData.append("frame", blob, "frame.jpg");
         const response = await fetch('http://localhost:8000/analyze', {
           method: 'POST',
-        
           body: formData
         });
-        // ---- error handling ---- 
+        
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -169,26 +163,9 @@ const CameraView = () => {
         console.log(data);
 
         if (data.summary){
-        speakText(data.summary);
-      }
+          speakText(data.summary);
+        }
       }, "image/jpeg", 0.8);
-
-
-      
-
-      // const response = await fetch('http://localhost:8000/analyze', {
-      //   method: 'POST',
-      //   headers: {
-      //     'Content-Type': 'application/json',
-      //   },
-      //   body: JSON.stringify({
-      //     image: imageData,
-      //     user_mode: userMode
-      //   })
-      // });
-      
-     
-      // return data; // Should contain { narration, audio_url? }
     } catch (error) {
       console.error('Analysis error:', error);
       setStatus('Analysis failed - check if backend is running');
@@ -200,56 +177,47 @@ const CameraView = () => {
   let isSpeaking = false;
 
   const speakText = (text) => {
+    if (window.__ELEVEN_ACTIVE__) {
+      console.log("⏸ Skipping browser speech: ElevenLabs active");
+      return;
+    }
 
-  if (window.__ELEVEN_ACTIVE__) {
-  console.log("⏸ Skipping browser speech: ElevenLabs active");
-  return;
-}
-
-  // add new text to queue
-  speechQueue.push(text);
-  processQueue();
+    speechQueue.push(text);
+    processQueue();
   };
 
   const processQueue = () => {
-  // if already speaking or nothing to say, stop
-  if (isSpeaking) return;
-  if (speechQueue.length === 0) return;
+    if (isSpeaking) return;
+    if (speechQueue.length === 0) return;
 
-  // get next sentence
-  const text = speechQueue.shift();
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.rate = 1.0;
-  utterance.pitch = 1.0;
-  utterance.volume = 1.0;
+    const text = speechQueue.shift();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+    utterance.volume = 1.0;
 
-  utterance.onstart = () => {
-    isSpeaking = true;
-    setStatus('Speaking...');
+    utterance.onstart = () => {
+      isSpeaking = true;
+      setStatus('Speaking...');
+    };
+
+    utterance.onend = () => {
+      isSpeaking = false;
+
+      if (mode === 'live') {
+        setStatus('Monitoring...');
+      } else {
+        setStatus('Ready');
+      }
+
+      if (speechQueue.length > 0) {
+        processQueue();
+      }
+    };
+
+    window.speechSynthesis.speak(utterance);
   };
 
-  utterance.onend = () => {
-    isSpeaking = false;
-
-    // restore correct status after speaking
-    if (mode === 'live') {
-      setStatus('Monitoring...');
-    } else {
-      setStatus('Ready');
-    }
-
-    // check if another sentence is waiting
-    if (speechQueue.length > 0) {
-      processQueue();
-    }
-  };
-
-  // start speaking
-  window.speechSynthesis.speak(utterance);
-};
-
-
-  // Alternative: Play audio from ElevenLabs URL
   const playAudioFromURL = (audioUrl) => {
     const audio = new Audio(audioUrl);
     audio.play()
@@ -261,12 +229,10 @@ const CameraView = () => {
     setMode('live');
     setStatus('Live monitoring active');
     
-    // Clear any existing interval
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
     }
     
-    // Capture and analyze every 1 second
     intervalRef.current = setInterval(async () => {
       const frame = captureFrame();
       if (!frame) return;
@@ -274,10 +240,9 @@ const CameraView = () => {
       const result = await analyzeFrame(frame, 'live');
       
       if (result?.narration) {
-        // Only speak if there's something important (backend filters this)
         speakText(result.narration);
       }
-    }, 2000); // 1 second interval (adjust as needed)
+    }, 2000);
   };
 
   const stopLiveMode = () => {
@@ -290,7 +255,7 @@ const CameraView = () => {
     window.speechSynthesis.cancel();
   };
 
-   const explainScene = async () => {
+  const explainScene = async () => {
     setMode('explain');
     
     const frame = captureFrame();
@@ -307,54 +272,60 @@ const CameraView = () => {
       setStatus('No description available');
     }
     
-    // Reset mode after explanation
     setTimeout(() => setMode(null), 1000);
   };
 
-  useEffect(() => {
-  // prevent double execution under React Strict Mode
-  if (window.__VOICE_INIT_DONE__) return;
-  window.__VOICE_INIT_DONE__ = true;
-
-  const initVoicePrompt = async () => {
-    window.speechSynthesis.cancel(); // stop any queued browser voices
-
-    await speakWithElevenLabs(
-      "Welcome to Mira. Would you like to go live and receive real time descriptions of your surroundings, or take a snapshot and describe your current view? Say live or snapshot."
-    );
-
-    const waitForEleven = setInterval(() => {
-      if (!window.__ELEVEN_ACTIVE__) {
-        clearInterval(waitForEleven);
-        listenForCommand(async (command) => {
-          if (command === "live") {
-            speakWithElevenLabs("Starting live mode now.");
-            startLiveMode();
-          } else if (command === "snapshot") {
-  await speakWithElevenLabs("Taking a snapshot now.");
-  
-  // Wait until ElevenLabs finishes
-  const waitUntilDone = setInterval(() => {
-    if (!window.__ELEVEN_ACTIVE__) {
-      clearInterval(waitUntilDone);
-      explainScene();
-    }
-  }, 500);
-}
-        });
-      }
-    }, 1000);
-  };
-
-  startCamera();
-  initVoicePrompt();
-
-  return () => {
+  const handleLogoClick = () => {
+    // Stop any active processes
+    stopLiveMode();
     stopCamera();
-    if (intervalRef.current) clearInterval(intervalRef.current);
+    window.speechSynthesis.cancel();
+    
+    // Navigate back to landing page
+    navigate('/');
   };
-}, []);
 
+  useEffect(() => {
+    if (window.__VOICE_INIT_DONE__) return;
+    window.__VOICE_INIT_DONE__ = true;
+
+    const initVoicePrompt = async () => {
+      window.speechSynthesis.cancel();
+
+      await speakWithElevenLabs(
+        "Welcome to Mira. Would you like to go live and receive real time descriptions of your surroundings, or take a snapshot and describe your current view? Say live or snapshot."
+      );
+
+      const waitForEleven = setInterval(() => {
+        if (!window.__ELEVEN_ACTIVE__) {
+          clearInterval(waitForEleven);
+          listenForCommand(async (command) => {
+            if (command === "live") {
+              speakWithElevenLabs("Starting live mode now.");
+              startLiveMode();
+            } else if (command === "snapshot") {
+              await speakWithElevenLabs("Taking a snapshot now.");
+              
+              const waitUntilDone = setInterval(() => {
+                if (!window.__ELEVEN_ACTIVE__) {
+                  clearInterval(waitUntilDone);
+                  explainScene();
+                }
+              }, 500);
+            }
+          });
+        }
+      }, 1000);
+    };
+
+    startCamera();
+    initVoicePrompt();
+
+    return () => {
+      stopCamera();
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#0A0E27] relative overflow-hidden">
@@ -434,10 +405,8 @@ const CameraView = () => {
         }
       `}</style>
 
-      {/* Animated grid background */}
       <div className="fixed inset-0 grid-pattern opacity-30"></div>
       
-      {/* Gradient orbs */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-40 -right-40 w-[500px] h-[500px] bg-emerald-500/10 rounded-full blur-[120px] animate-float"></div>
         <div className="absolute -bottom-40 -left-40 w-[500px] h-[500px] bg-blue-500/10 rounded-full blur-[120px] animate-float" style={{animationDelay: '2s'}}></div>
@@ -445,11 +414,14 @@ const CameraView = () => {
       </div>
 
       <div className="relative z-10 max-w-[1600px] mx-auto px-8 py-12">
-        {/* Header with logo */}
         <div className="mb-12">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-6">
-              <div className="relative group">
+              <button 
+                onClick={handleLogoClick}
+                className="relative group cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2 focus:ring-offset-[#0A0E27] rounded-2xl"
+                aria-label="Return to home"
+              >
                 <div className="absolute inset-0 bg-gradient-to-br from-emerald-400/20 to-emerald-600/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
                 <div className="relative w-16 h-16 bg-gradient-to-br from-emerald-400 to-emerald-600 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-500/25 group-hover:scale-110 transition-transform duration-300">
                   <svg className="w-9 h-9 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -457,14 +429,13 @@ const CameraView = () => {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                   </svg>
                 </div>
-              </div>
+              </button>
               <div>
                 <h1 className="text-4xl font-bold text-white mb-1 tracking-tight">Mira</h1>
-                <p className="text-slate-400 text-sm font-medium tracking-wide">MACHINE INTELLIEGENT RECOGNITION ASSISTANT</p>
+                <p className="text-slate-400 text-sm font-medium tracking-wide">MACHINE INTELLIGENT RECOGNITION ASSISTANT</p>
               </div>
             </div>
             
-            {/* Status indicator */}
             <div className={`glass-morphism px-6 py-3 rounded-full transition-all duration-500 ${
               mode === 'live' ? 'animate-pulse-border' : ''
             }`}>
@@ -490,15 +461,12 @@ const CameraView = () => {
           </div>
         </div>
 
-        {/* Main content grid */}
         <div className="grid lg:grid-cols-[1fr_400px] gap-8">
-          {/* Camera viewport */}
           <div className="space-y-6">
             <div className="relative group">
               <div className="absolute -inset-[1px] bg-gradient-to-br from-emerald-500/50 via-blue-500/30 to-emerald-500/50 rounded-3xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
               
               <div className="relative glass-morphism rounded-3xl overflow-hidden" style={{height: '700px'}}>
-                {/* Scan line effect when active */}
                 {mode === 'live' && (
                   <div className="absolute inset-0 z-10 pointer-events-none">
                     <div className="absolute inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-emerald-400 to-transparent scan-line opacity-50"></div>
@@ -530,7 +498,6 @@ const CameraView = () => {
                   </div>
                 )}
 
-                {/* Live recording badge */}
                 {mode === 'live' && (
                   <div className="absolute top-6 left-6">
                     <div className="relative">
@@ -543,7 +510,6 @@ const CameraView = () => {
                   </div>
                 )}
 
-                {/* Detection overlay */}
                 {detections.length > 0 && (
                   <div className="absolute bottom-6 left-6 right-6">
                     <div className="glass-morphism rounded-2xl p-5 border border-white/10">
@@ -580,7 +546,6 @@ const CameraView = () => {
               </div>
             </div>
 
-            {/* Technical specs bar */}
             <div className="glass-morphism rounded-2xl p-4">
               <div className="flex items-center justify-between text-xs">
                 <div className="flex items-center gap-6">
@@ -606,9 +571,7 @@ const CameraView = () => {
             </div>
           </div>
 
-          {/* Control panel */}
           <div className="space-y-6">
-            {/* Live mode button */}
             <button
               onClick={mode === 'live' ? stopLiveMode : startLiveMode}
               className={`group relative w-full rounded-2xl p-8 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] ${
@@ -639,7 +602,6 @@ const CameraView = () => {
               </div>
             </button>
 
-            {/* Explain scene button */}
             <button
               onClick={explainScene}
               disabled={mode === 'live'}
@@ -661,7 +623,6 @@ const CameraView = () => {
               </div>
             </button>
 
-            {/* Feature cards */}
             <div className="space-y-3 pt-4">
               <div className="glass-morphism rounded-xl p-5 border border-emerald-500/20 hover:border-emerald-500/40 hover:bg-emerald-500/5 transition-all duration-300 group">
                 <div className="flex gap-4">

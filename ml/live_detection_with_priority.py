@@ -1,5 +1,6 @@
 # live_detection_with_priority.py
 # Real-time webcam detection + on-frame risk scoring display.
+from return_json import detections_to_json
 
 import cv2
 import numpy as np
@@ -59,7 +60,8 @@ while True:
 
     # Score detections
     scored = scorer.score(detections, frame_w=w, frame_h=h)
-
+    json_payload = detections_to_json(scored)
+    print(json_payload)
     # Draw zones (optional visual guide)
     one_third = w // 3
     cv2.line(frame, (one_third, 0), (one_third, h), (60, 60, 60), 1)

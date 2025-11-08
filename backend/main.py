@@ -13,15 +13,14 @@ import numpy as np
 import os
 import sys
 
-from ml.risk_scoring import RiskScorer
+# from ml.risk_scoring import RiskScorer
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ML_DIR = os.path.join(BASE_DIR, "ml")
 sys.path.append(ML_DIR)
 
 from live_detection_with_priority import live_detection_with_priority
-
-
+from risk_scoring import RiskScorer
 
 
 app = FastAPI()
@@ -55,6 +54,6 @@ async def analyze(frame: UploadFile = File(...)):
     frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
     if frame is None:
-        return {"error": "could not decode image"}
+        return {"error": "could not decode image"} 
     
     return live_detection_with_priority(model,scorer,)

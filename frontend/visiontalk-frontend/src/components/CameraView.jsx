@@ -56,18 +56,19 @@ const CameraView = () => {
     try {
       setStatus(`Analyzing (${userMode} mode)...`);
       const canvas = document.createElement('canvas');
+      // Ensure canvas matches the video dimensions
+      canvas.width = videoRef.current.videoWidth;
+      canvas.height = videoRef.current.videoHeight;
       const ctx = canvas.getContext('2d');
-      ctx.drawImage(videoRef, 0, 0, canvas.width, canvas.height);
+      ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
       
       canvas.toBlob(async (blob) => {
         console.log("converting to blob!")
         const formData = new FormData();
-        formData.append("frame", blob);
+        formData.append("frame", blob, "frame.jpg");
         const response = await fetch('http://localhost:8000/analyze', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+        
           body: formData
         });
         // ---- error handling ---- 
@@ -77,7 +78,7 @@ const CameraView = () => {
         
         const data = await response.json();
         console.log(data)
-      }, "image/jpeg");
+      }, "image/jpeg", 0.8);
       
 
       // const response = await fetch('http://localhost:8000/analyze', {

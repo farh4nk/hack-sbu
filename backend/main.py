@@ -13,23 +13,22 @@ import numpy as np
 import os
 import sys
 
-from ml.risk_scoring import RiskScorer
-
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ML_DIR = os.path.join(BASE_DIR, "ml")
 sys.path.append(ML_DIR)
 
 from live_detection_with_priority import live_detection_with_priority
-
+from risk_scoring import RiskScorer
 
 
 
 app = FastAPI()
 
+# CORS: restrict to frontend origin and avoid credentials for simplicity
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"]
 )
@@ -57,4 +56,5 @@ async def analyze(frame: UploadFile = File(...)):
     if frame is None:
         return {"error": "could not decode image"}
     
-    return live_detection_with_priority(model,scorer,)
+    # Pass decoded frame into the async detector and await result
+    return await live_detection_with_priority(model, scorer, frame)

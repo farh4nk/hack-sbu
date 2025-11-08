@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from ultralytics import YOLO
+from pydantic import BaseModel
 from PIL import Image
 import base64
 import io

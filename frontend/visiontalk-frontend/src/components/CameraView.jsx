@@ -77,8 +77,14 @@ const CameraView = () => {
         }
         
         const data = await response.json();
-        console.log(data)
+        console.log(data);
+
+        if (data.summary){
+        speakText(data.summary);
+      }
       }, "image/jpeg", 0.8);
+
+
       
 
       // const response = await fetch('http://localhost:8000/analyze', {
@@ -101,20 +107,52 @@ const CameraView = () => {
     }
   };
 
+  const speechQueue = [];
+  let isSpeaking = false;
+
   const speakText = (text) => {
-    // Cancel any ongoing speech
-    window.speechSynthesis.cancel();
-    
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1.0;
-    utterance.pitch = 1.0;
-    utterance.volume = 1.0;
-    
-    utterance.onstart = () => setStatus('Speaking...');
-    utterance.onend = () => setStatus(mode === 'live' ? 'Monitoring...' : 'Ready');
-    
-    window.speechSynthesis.speak(utterance);
+  // add new text to queue
+  speechQueue.push(text);
+  processQueue();
   };
+
+  const processQueue = () => {
+  // if already speaking or nothing to say, stop
+  if (isSpeaking) return;
+  if (speechQueue.length === 0) return;
+
+  // get next sentence
+  const text = speechQueue.shift();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.rate = 1.0;
+  utterance.pitch = 1.0;
+  utterance.volume = 1.0;
+
+  utterance.onstart = () => {
+    isSpeaking = true;
+    setStatus('Speaking...');
+  };
+
+  utterance.onend = () => {
+    isSpeaking = false;
+
+    // restore correct status after speaking
+    if (mode === 'live') {
+      setStatus('Monitoring...');
+    } else {
+      setStatus('Ready');
+    }
+
+    // check if another sentence is waiting
+    if (speechQueue.length > 0) {
+      processQueue();
+    }
+  };
+
+  // start speaking
+  window.speechSynthesis.speak(utterance);
+};
+
 
   // Alternative: Play audio from ElevenLabs URL
   const playAudioFromURL = (audioUrl) => {

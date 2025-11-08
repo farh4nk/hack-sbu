@@ -44,7 +44,6 @@ scorer = RiskScorer(
 @app.get("/")
 async def root():
     return {"message": "Hello World"}
- 
 @app.post("/analyze")
 async def analyze(frame: UploadFile = File(...)):
     print("reached endpoint.")

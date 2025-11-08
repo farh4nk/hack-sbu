@@ -13,13 +13,14 @@ import numpy as np
 import os
 import sys
 
-from ml.risk_scoring import RiskScorer
+# from ml.risk_scoring import RiskScorer
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ML_DIR = os.path.join(BASE_DIR, "ml")
 sys.path.append(ML_DIR)
 
 from live_detection_with_priority import live_detection_with_priority
+from risk_scoring import RiskScorer
 
 
 
@@ -28,7 +29,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000", "https://localhost:3000", "http://127.0.0.1:8000", ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"]

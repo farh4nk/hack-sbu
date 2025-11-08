@@ -7,6 +7,7 @@ const CameraView = () => {
   const [mode, setMode] = useState(null);
   const [status, setStatus] = useState('Ready');
   const [debugInfo, setDebugInfo] = useState('');
+  const [detections, setDetections] = useState([]);
 
   const startCamera = async () => {
     try {
@@ -14,7 +15,6 @@ const CameraView = () => {
       setStatus('Requesting camera...');
       setDebugInfo('Requesting camera permission...');
       
-      // Stop any existing streams first
       if (videoRef.current?.srcObject) {
         const tracks = videoRef.current.srcObject.getTracks();
         tracks.forEach(track => track.stop());
@@ -34,7 +34,6 @@ const CameraView = () => {
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         
-        // Wait for metadata to load
         await new Promise((resolve, reject) => {
           const timeout = setTimeout(() => reject(new Error('Timeout')), 5000);
           
@@ -46,7 +45,6 @@ const CameraView = () => {
           };
         });
         
-        // Play the video
         await videoRef.current.play();
         
         console.log('✅ Video playing');
@@ -74,6 +72,7 @@ const CameraView = () => {
     setIsStreaming(false);
     setStatus('Camera stopped');
     setDebugInfo('Camera stopped');
+    setDetections([]);
   };
 
   const captureFrame = () => {
@@ -117,11 +116,48 @@ const CameraView = () => {
       }
       
       const data = await response.json();
+      
+      // Update detections if available
+      if (data.detections) {
+        setDetections(data.detections);
+      }
+      
       return data;
     } catch (error) {
       console.error('Analysis error:', error);
-      setStatus('Analysis failed - check backend');
-      return null;
+      setStatus('Backend not connected - using demo mode');
+      
+      // DEMO MODE: Simulate backend response for testing
+      return simulateBackendResponse(userMode);
+    }
+  };
+
+  // Simulated backend response for frontend testing
+  const simulateBackendResponse = (userMode) => {
+    const demoDetections = [
+      { label: 'person', confidence: 0.92, direction: 'center', priority: 5 },
+      { label: 'chair', confidence: 0.85, direction: 'left', priority: 2 },
+      { label: 'laptop', confidence: 0.78, direction: 'right', priority: 1 }
+    ];
+    
+    setDetections(demoDetections);
+    
+    if (userMode === 'live') {
+      // Only report high-priority items in live mode
+      const criticalItems = demoDetections.filter(d => d.priority >= 5);
+      if (criticalItems.length > 0) {
+        return {
+          narration: `${criticalItems[0].label} detected in ${criticalItems[0].direction}`,
+          detections: demoDetections
+        };
+      }
+      return { narration: '', detections: demoDetections };
+    } else {
+      // Full scene description for explain mode
+      return {
+        narration: 'You are in an indoor space. There is a person in front of you, a chair to your left, and a laptop on your right.',
+        detections: demoDetections
+      };
     }
   };
 
@@ -154,6 +190,7 @@ const CameraView = () => {
       clearInterval(intervalRef.current);
     }
     
+    // Capture and analyze every 2 seconds in live mode
     intervalRef.current = setInterval(async () => {
       const frame = captureFrame();
       if (!frame) {
@@ -166,7 +203,7 @@ const CameraView = () => {
       if (result?.narration && result.narration.trim() !== '') {
         speakText(result.narration);
       }
-    }, 1000);
+    }, 2000);
   };
 
   const stopLiveMode = () => {
@@ -177,6 +214,7 @@ const CameraView = () => {
     setMode(null);
     setStatus('Ready');
     window.speechSynthesis.cancel();
+    setDetections([]);
     stopCamera();
   };
 
@@ -187,10 +225,11 @@ const CameraView = () => {
     }
     
     setMode('explain');
+    setStatus('Capturing scene...');
     
     const frame = captureFrame();
     if (!frame) {
-      alert('Unable to capture frame');
+      setStatus('Unable to capture frame');
       setMode(null);
       return;
     }
@@ -234,15 +273,8 @@ const CameraView = () => {
           <span className="text-white">● {status}</span>
         </div>
         
-        {/* Debug Info
-        {debugInfo && (
-          <div className="bg-yellow-900 bg-opacity-50 px-4 py-2 rounded-lg mb-4 text-yellow-200 text-sm">
-            <strong>Debug:</strong> {debugInfo}
-          </div>
-        )} */}
-        
         {/* Camera Preview */}
-        <div className="relative bg-black rounded-2xl overflow-hidden mb-8 shadow-2xl" style={{ minHeight: '500px' }}>
+        <div className="relative bg-black mb-8 shadow-2xl" style={{ minHeight: '500px' }}>
           <video
             ref={videoRef}
             autoPlay
@@ -271,6 +303,33 @@ const CameraView = () => {
             <div className="absolute top-6 left-6 bg-red-600 text-white px-4 py-2 rounded-full font-bold flex items-center gap-2 animate-pulse">
               <span className="w-3 h-3 bg-white rounded-full"></span>
               LIVE
+            </div>
+          )}
+          
+          {/* Detection Overlay */}
+          {detections.length > 0 && (
+            <div className="absolute bottom-6 left-6 right-6 bg-black bg-opacity-70 rounded-xl p-4">
+              <h3 className="text-white font-bold mb-2 flex items-center gap-2">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+                Detected Objects
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {detections.map((det, idx) => (
+                  <span
+                    key={idx}
+                    className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                      det.priority >= 5 ? 'bg-red-600' : 
+                      det.priority >= 3 ? 'bg-yellow-600' : 
+                      'bg-gray-600'
+                    } text-white`}
+                  >
+                    {det.label} ({det.direction})
+                  </span>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -339,6 +398,9 @@ const CameraView = () => {
         {/* Footer */}
         <div className="mt-6 text-center text-gray-400 text-sm">
           <p>Powered by YOLOv8 Computer Vision + Google Gemini AI</p>
+          {status.includes('demo mode') && (
+            <p className="mt-2 text-yellow-400">⚠️ Running in demo mode - connect backend at http://localhost:8000/analyze</p>
+          )}
         </div>
       </div>
     </div>

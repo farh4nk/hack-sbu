@@ -54,8 +54,10 @@ async def live_detection_with_priority(model: YOLO, scorer: RiskScorer, frame):
 
     response = client.models.generate_content(
         model="gemini-2.5-flash",
-        contents="I want you to explain this JSON in detail in complete human sentences. Be as specific as possible." + json_payload,
+        contents="Given this dataset give me a summary of what is going on. Be as concise and specific as possible. Imagine you are talking to somebody who is non technical and just wants to know what is happening." + json_payload,
     )
+
+    print(response)
 
     return {
         "detections": json_payload,

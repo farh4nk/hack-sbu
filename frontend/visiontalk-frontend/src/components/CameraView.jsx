@@ -144,7 +144,7 @@ const CameraView = () => {
         // Only speak if there's something important (backend filters this)
         speakText(result.narration);
       }
-    }, 1000); // 1 second interval (adjust as needed)
+    }, 2000); // 1 second interval (adjust as needed)
   };
 
   const stopLiveMode = () => {

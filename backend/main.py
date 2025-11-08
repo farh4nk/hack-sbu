@@ -54,7 +54,7 @@ async def analyze(frame: UploadFile = File(...)):
     frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
     if frame is None:
-        return {"error": "could not decode image"}
+        return {"error": "could not decode image"} 
     
     # Pass decoded frame into the async detector and await result
     return await live_detection_with_priority(model, scorer, frame)

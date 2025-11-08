@@ -55,24 +55,44 @@ const CameraView = () => {
   const analyzeFrame = async (imageData, userMode) => {
     try {
       setStatus(`Analyzing (${userMode} mode)...`);
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       
-      const response = await fetch('http://localhost:8000/analyze', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          image: imageData,
-          user_mode: userMode
-        })
-      });
+      canvas.toBlob(async (blob) => {
+        console.log("converting to blob!")
+        const formData = new FormData();
+        formData.append("frame", blob);
+        const response = await fetch('http://localhost:8000/analyze', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: formData
+        });
+        // ---- error handling ---- 
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        console.log(data)
+      }, "image/jpeg");
       
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
+
+      // const response = await fetch('http://localhost:8000/analyze', {
+      //   method: 'POST',
+      //   headers: {
+      //     'Content-Type': 'application/json',
+      //   },
+      //   body: JSON.stringify({
+      //     image: imageData,
+      //     user_mode: userMode
+      //   })
+      // });
       
-      const data = await response.json();
-      return data; // Should contain { narration, audio_url? }
+     
+      // return data; // Should contain { narration, audio_url? }
     } catch (error) {
       console.error('Analysis error:', error);
       setStatus('Analysis failed - check if backend is running');

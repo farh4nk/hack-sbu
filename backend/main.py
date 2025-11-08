@@ -1,16 +1,19 @@
 import json
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, File, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from ultralytics import YOLO
 from pydantic import BaseModel
 from PIL import Image
 import base64
+import cv2
 import io
 import numpy as np
 # from google import genai
 
 import os
 import sys
+
+from ml.risk_scoring import RiskScorer
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ML_DIR = os.path.join(BASE_DIR, "ml")
@@ -33,11 +36,25 @@ app.add_middleware(
 
 model = YOLO("yolov8s.pt")
 
+scorer = RiskScorer(
+    critical_threshold=8.0,
+    important_threshold=4.0,
+)
+
 
 @app.get("/")
 async def root():
     return {"message": "Hello World"}
  
 @app.post("/analyze")
-async def analyze():
-    return live_detection_with_priority()
+async def analyze(frame: UploadFile = File(...)):
+    print("reached endpoint.")
+    contents = await frame.read()
+
+    nparr = np.frombuffer(contents, np.uint8)
+    frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+    if frame is None:
+        return {"error": "could not decode image"}
+    
+    return live_detection_with_priority(model,scorer,)

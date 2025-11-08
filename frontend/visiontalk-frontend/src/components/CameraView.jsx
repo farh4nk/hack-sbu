@@ -98,29 +98,23 @@ const CameraView = () => {
 
   const startCamera = async () => {
     try {
-      setStatus('Initializing camera...');
-      if (videoRef.current?.srcObject) {
-        const tracks = videoRef.current.srcObject.getTracks();
-        tracks.forEach(track => track.stop());
-      }
-      
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+        video: { 
+          facingMode: 'environment', // Use back camera on mobile
+          width: { ideal: 640 },
+          height: { ideal: 480 }
+        }
       });
       
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        await new Promise((resolve, reject) => {
-          const timeout = setTimeout(() => reject(new Error('Timeout')), 5000);
-          videoRef.current.onloadedmetadata = () => { clearTimeout(timeout); resolve(); };
-        });
-        await videoRef.current.play();
         setIsStreaming(true);
         setStatus('Camera active');
       }
     } catch (error) {
-      setStatus(`Error: ${error.message}`);
-      alert('Camera access required.');
+      console.error('Camera access error:', error);
+      setStatus('Camera access denied');
+      alert('Please allow camera access to use this app');
     }
   };
 
@@ -128,22 +122,23 @@ const CameraView = () => {
     if (videoRef.current?.srcObject) {
       const tracks = videoRef.current.srcObject.getTracks();
       tracks.forEach(track => track.stop());
-      videoRef.current.srcObject = null;
+      setIsStreaming(false);
+      setStatus('Camera stopped');
     }
-    setIsStreaming(false);
-    setStatus('Camera stopped');
-    setDetections([]);
   };
 
   const captureFrame = () => {
-    if (!videoRef.current || !isStreaming) return null;
+    if (!videoRef.current) return null;
+    
     const canvas = document.createElement('canvas');
     canvas.width = videoRef.current.videoWidth;
     canvas.height = videoRef.current.videoHeight;
-    if (canvas.width === 0 || canvas.height === 0) return null;
+    
     const ctx = canvas.getContext('2d');
     ctx.drawImage(videoRef.current, 0, 0);
-    return canvas.toDataURL('image/jpeg', 0.95);
+    
+    // Return base64 image (JPEG format, 0.8 quality for compression)
+    return canvas.toDataURL('image/jpeg', 0.8);
   };
 
   const analyzeFrame = async (imageData, userMode) => {
@@ -264,11 +259,18 @@ const CameraView = () => {
 
   const startLiveMode = () => {
     setMode('live');
-    setStatus('Live monitoring');
-    if (intervalRef.current) clearInterval(intervalRef.current);
+    setStatus('Live monitoring active');
+    
+    // Clear any existing interval
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+    }
+    
+    // Capture and analyze every 1 second
     intervalRef.current = setInterval(async () => {
       const frame = captureFrame();
       if (!frame) return;
+      
       const result = await analyzeFrame(frame, 'live');
       
       if (result?.narration) {
@@ -285,21 +287,27 @@ const CameraView = () => {
     }
     setMode(null);
     setStatus('Ready');
-    setDetections([]);
-    stopCamera();
+    window.speechSynthesis.cancel();
   };
 
-  const explainScene = async () => {
-    if (!isStreaming) {
-      await startCamera();
-      await new Promise(r => setTimeout(r, 500));
-    }
+   const explainScene = async () => {
     setMode('explain');
-    setStatus('Analyzing...');
+    
     const frame = captureFrame();
-    if (!frame) { setStatus('Capture failed'); setMode(null); return; }
+    if (!frame) {
+      alert('Unable to capture frame');
+      return;
+    }
+    
     const result = await analyzeFrame(frame, 'explain_scene');
-    if (result?.narration) console.log('Speak:', result.narration);
+    
+    if (result?.narration) {
+      speakText(result.narration);
+    } else {
+      setStatus('No description available');
+    }
+    
+    // Reset mode after explanation
     setTimeout(() => setMode(null), 1000);
   };
 

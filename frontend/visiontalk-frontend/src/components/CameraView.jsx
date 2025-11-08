@@ -320,7 +320,7 @@ const CameraView = () => {
     window.speechSynthesis.cancel(); // stop any queued browser voices
 
     await speakWithElevenLabs(
-      "Welcome to VisionTalk. Would you like to go live and receive real time descriptions of your surroundings, or take a snapshot and describe your current view? Say live or snapshot."
+      "Welcome to Mira. Would you like to go live and receive real time descriptions of your surroundings, or take a snapshot and describe your current view? Say live or snapshot."
     );
 
     const waitForEleven = setInterval(() => {
@@ -459,8 +459,8 @@ const CameraView = () => {
                 </div>
               </div>
               <div>
-                <h1 className="text-4xl font-bold text-white mb-1 tracking-tight">VisionTalk AI</h1>
-                <p className="text-slate-400 text-sm font-medium tracking-wide">INTELLIGENT VISUAL ASSISTANCE</p>
+                <h1 className="text-4xl font-bold text-white mb-1 tracking-tight">Mira</h1>
+                <p className="text-slate-400 text-sm font-medium tracking-wide">MACHINE INTELLIEGENT RECOGNITION ASSISTANT</p>
               </div>
             </div>
             

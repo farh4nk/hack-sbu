@@ -118,14 +118,10 @@ const LandingPage = ({ onGetStarted }) => {
                 </div>
               </div>
               <div>
-                <h2 className="text-white text-xl font-bold">VisionTalk AI</h2>
-                <p className="text-slate-400 text-xs font-medium">INTELLIGENT VISUAL ASSISTANCE</p>
+                <h2 className="text-white text-xl font-bold">Mira</h2>
+                <p className="text-slate-400 text-xs font-medium">MACHINE INTELLIEGENT RECOGNITION ASSISTANT</p>
               </div>
             </div>
-            
-            <button className="glass-morphism px-6 py-2.5 rounded-full text-slate-200 text-sm font-medium hover:bg-white/5 transition-all">
-              About
-            </button>
           </div>
         </header>
 
@@ -137,19 +133,19 @@ const LandingPage = ({ onGetStarted }) => {
               <div className="space-y-8 animate-slide-up">
                 <div className="inline-flex items-center gap-2 glass-morphism px-4 py-2 rounded-full">
                   <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></div>
-                  <span className="text-emerald-400 text-sm font-semibold">AI-Powered Accessibility</span>
+                  <span className="text-emerald-400 text-sm font-semibold">ML-Powered Accessibility</span>
                 </div>
 
                 <h1 className="text-6xl lg:text-7xl font-bold text-white leading-[1.1]">
                   See the world
                   <br />
                   <span className="bg-gradient-to-r from-emerald-400 to-blue-400 bg-clip-text text-transparent">
-                    through AI
+                    through Computer Vision
                   </span>
                 </h1>
 
                 <p className="text-xl text-slate-300 leading-relaxed max-w-xl">
-                  VisionTalk AI combines real-time computer vision with natural language processing to help you navigate and understand your environment with confidence.
+                  Mira combines real-time computer vision with natural language processing to help you navigate and understand your environment with confidence.
                 </p>
 
                 <div className="flex flex-wrap gap-4 pt-4">
@@ -297,7 +293,7 @@ const LandingPage = ({ onGetStarted }) => {
                   </span>
                 </h2>
                 <p className="text-xl text-slate-300 mb-8 max-w-2xl mx-auto">
-                  Start using VisionTalk AI today and discover a new way to interact with the world around you.
+                  Start using Mira today and discover a new way to interact with the world around you.
                 </p>
                 <button 
                   onClick={() => window.location.href = '/camera'}
@@ -326,7 +322,7 @@ const LandingPage = ({ onGetStarted }) => {
                   </svg>
                 </div>
                 <div>
-                  <div className="text-white font-bold">VisionTalk AI</div>
+                  <div className="text-white font-bold">Mira</div>
                   <div className="text-slate-500 text-sm">Clear vision, human connection</div>
                 </div>
               </div>
@@ -334,7 +330,7 @@ const LandingPage = ({ onGetStarted }) => {
               <div className="flex items-center gap-8 text-sm text-slate-400">
                 <span>Powered by YOLOv8 & Gemini AI</span>
                 <span>•</span>
-                <span>© 2024 VisionTalk</span>
+                <span>© 2025 Mira</span>
               </div>
             </div>
           </div>
@@ -343,7 +339,7 @@ const LandingPage = ({ onGetStarted }) => {
     </div>
   )};
 
-  
+
 export default LandingPage;
 
 

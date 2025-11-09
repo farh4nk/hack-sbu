@@ -666,7 +666,39 @@ const CameraView = () => {
                 </div>
               </div>
             </div>
+
+            {/* Voice Commands */}
+            <div className="glass-morphism rounded-xl p-5 border border-white/10">
+              <div>
+                <h4 className="text-white font-semibold text-sm mb-2">Voice Commands</h4>
+                <ul className="space-y-1.5 text-xs text-slate-400">
+                  <li className="flex items-center gap-2">
+                    <span className="text-emerald-400">•</span>
+                    Say "live" to start monitoring
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="text-blue-400">•</span>
+                    Say "snapshot" for scene description
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="text-red-400">•</span>
+                    Say "stop" to end monitoring
+                  </li>
+                </ul>
+              </div>
+            </div>
           </div>
+        </div>
+
+        {/* Footer */}
+        <div className="mt-12 text-center">
+          <div className="inline-flex items-center gap-2 glass-morphism px-6 py-3 rounded-full border border-white/10">
+            <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse"></div>
+            <span className="text-slate-400 text-xs font-medium">Powered by advanced AI vision technology</span>
+          </div>
+          <p className="mt-4 text-slate-500 text-xs">
+            © 2025 MIRA • Machine Intelligent Recognition Assistant
+          </p>
         </div>
       </div>
     </div>

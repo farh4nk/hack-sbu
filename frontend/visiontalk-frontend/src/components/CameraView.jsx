@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 
 const ELEVEN_API_KEY = "sk_28f286edcb53fa29741545903ab8bc06c5a0c5d469410609";
 const ELEVEN_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"; 
+const GEMINI_API_KEY = "AIzaSyBS4tArjXTEb3rmWeRRb8ZAZPP54YcPTow"
 
 const speakWithElevenLabs = async (text) => {
   if (window.__ELEVEN_ACTIVE__) {
@@ -96,6 +97,7 @@ const CameraView = () => {
   const isSpeakingRef = useRef(false);
   const liveLoopActiveRef = useRef(false);
   const modeRef = useRef(mode);
+  const liveRecognitionRef = useRef(null);
 
   useEffect(() => {
     modeRef.current = mode;
@@ -162,6 +164,13 @@ const CameraView = () => {
       );
     });
   };
+
+  const blobToBase64 = (blob) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
 
   const analyzeFrame = async (frameBlob, userMode) => {
     if (!frameBlob) return null;
@@ -240,9 +249,15 @@ const CameraView = () => {
   const startLiveMode = async () => {
     if (liveLoopActiveRef.current) return;
 
+    window.__LIVE_ACTIVE__ = true;
     liveLoopActiveRef.current = true;
     setMode('live');
     setStatus('Live monitoring active');
+
+    listenDuringLive(() => {
+      console.log("🗣️ Heard stop command — stopping live mode...");
+      stopLiveMode();
+    });
     
     while (liveLoopActiveRef.current) {
       try {
@@ -264,18 +279,158 @@ const CameraView = () => {
     }
   };
 
-  const stopLiveMode = () => {
+
+  // const startLiveMode = () => {
+  //   if (window.__LIVE_ACTIVE__) return; // prevent duplicate starts
+  //   window.__LIVE_ACTIVE__ = true;
+  
+  //   setMode('live');
+  //   setStatus('Live monitoring active');
+  
+  //   // Start listening for voice stop commands
+  //   listenDuringLive(() => {
+  //     console.log("🗣️ Heard stop command — stopping live mode...");
+  //     stopLiveMode();
+  //   });
+  
+  //   // Clear any existing interval just in case
+  //   if (intervalRef.current) {
+  //     clearInterval(intervalRef.current);
+  //   }
+  
+  //   // Repeatedly analyze frames only while active
+  //   intervalRef.current = setInterval(async () => {
+  //     if (!window.__LIVE_ACTIVE__) return; // stop loop if user said "stop"
+  
+  //     const frame = captureFrame();
+  //     if (!frame) return;
+  
+  //     try {
+  //       const result = await analyzeFrame(frame, 'live');
+  //       if (result?.narration) speakText(result.narration);
+  //     } catch (err) {
+  //       console.error('Analysis error:', err);
+  //     }
+  //   }, 2000); // every 2 seconds
+  // };
+
+  const stopLiveListening = () => {
+    if (liveRecognitionRef.current) {
+      const recognition = liveRecognitionRef.current;
+      liveRecognitionRef.current = null;
+      recognition.onresult = null;
+      recognition.onerror = null;
+      recognition.onend = null;
+      try {
+        recognition.stop();
+      } catch (err) {
+        console.warn('Speech recognition stop error:', err);
+      }
+    }
+  };
+
+  const stopLiveMode = (announce = true) => {
+    if (!liveLoopActiveRef.current && !window.__LIVE_ACTIVE__) return;
+  
+    console.log("🛑 Stopping live mode...");
+    window.__LIVE_ACTIVE__ = false;
     liveLoopActiveRef.current = false;
+    stopLiveListening();
+
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
-    setMode(null);
-    setStatus('Ready');
+
     window.speechSynthesis.cancel();
     speechQueueRef.current = [];
     isSpeakingRef.current = false;
+
+    setMode(null);
+    setStatus('Ready');
+
+    if (announce) {
+      speakText("Live mode stopped.");
+    }
   };
+
+  // const stopLiveMode = () => {
+  //   if (!window.__LIVE_ACTIVE__) return;
+  
+  //   console.log("🛑 Stopping live mode...");
+  //   window.__LIVE_ACTIVE__ = false;
+  
+  //   // stop repeating loop
+  //   if (intervalRef.current) {
+  //     clearInterval(intervalRef.current);
+  //     intervalRef.current = null;
+  //   }
+  
+  //   // cancel any ongoing speech output
+  //   window.speechSynthesis.cancel();
+  
+  //   setMode(null);
+  //   setStatus('Ready');
+  //   speakText("Live mode stopped.");
+  // };
+
+  const listenDuringLive = (stopCallback) => {
+    if (!("webkitSpeechRecognition" in window)) {
+      console.error("Speech recognition not supported in this browser.");
+      return;
+    }
+
+    stopLiveListening();
+
+    const recognition = new window.webkitSpeechRecognition();
+    liveRecognitionRef.current = recognition;
+    recognition.lang = "en-US";
+    recognition.continuous = true;
+    recognition.interimResults = false;
+
+    recognition.onresult = (event) => {
+      const transcript = event.results[event.results.length - 1][0].transcript
+        .toLowerCase()
+        .trim();
+  
+      console.log("🎙️ Live mode heard:", transcript);
+  
+      if (transcript.includes("stop")) {
+        console.log("🗣️ Heard stop, stopping live mode immediately...");
+        stopLiveListening();
+        if (stopCallback) stopCallback();
+      }
+    };
+  
+    recognition.onerror = (e) => {
+      console.error("Speech recognition error during live mode:", e);
+      if (window.__LIVE_ACTIVE__) {
+        setTimeout(() => listenDuringLive(stopCallback), 1000);
+      }
+    };
+  
+    recognition.onend = () => {
+      if (window.__LIVE_ACTIVE__) {
+        console.log("🎧 Restarting live listener...");
+        listenDuringLive(stopCallback);
+      }
+    };
+  
+    recognition.start();
+    console.log("🎧 Listening for 'stop' command during live mode...");
+  };
+
+  const playAudioFromURL = (audioUrl) => {
+    const audio = new Audio(audioUrl);
+    audio.play()
+      .then(() => setStatus('Playing audio...'))
+      .catch(err => console.error('Audio playback error:', err));
+  };
+
+  
+
+
+
 
   const explainScene = async () => {
     setMode('explain');
@@ -303,6 +458,91 @@ const CameraView = () => {
     
     setTimeout(() => setMode(null), 1000);
   };
+
+  const explainSnapshot = async () => {
+    if (!isStreaming) {
+      console.log("⚙️ Camera not active, starting now...");
+      await startCamera();
+  
+      // Wait for the video to fully initialize
+      await new Promise((resolve) => {
+        const check = setInterval(() => {
+          if (videoRef.current && videoRef.current.videoWidth > 0) {
+            clearInterval(check);
+            resolve();
+          }
+        }, 300);
+      });
+    }
+  
+    setStatus("Capturing snapshot...");
+    let frameBlob;
+    try {
+      frameBlob = await captureFrame();
+    } catch (err) {
+      console.error("Unable to capture snapshot frame:", err);
+      setStatus("Unable to capture snapshot");
+      return;
+    }
+  
+    if (!frameBlob) {
+      setStatus("Unable to capture snapshot");
+      return;
+    }
+  
+    try {
+      const frameDataUrl = await blobToBase64(frameBlob);
+      setStatus("Generating detailed description...");
+      speakText("Generating detailed description...");
+  
+      // Gemini API request
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  { text: `You are an AI assistant helping visually impaired users understand images. Provide clear, concise descriptions that capture the essential information in 2-3 sentences, focusing on:
+
+1. The main subject or scene
+2. Important people, objects, or text visible
+3. Relevant context like setting, colors, or actions
+
+Be direct and factual. Start with the most important information first. If text is present and legible, read it aloud. Avoid unnecessary phrases like "This image shows" or "The picture contains."` },
+                  { inline_data: { mime_type: "image/jpeg", data: frameDataUrl.split(",")[1] } }
+                ]
+              }
+            ]
+          }),
+        }
+      );
+  
+      const data = await res.json();
+      console.log("🧠 Gemini response:", data);
+  
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+      if (!text) {
+        setStatus("No description returned.");
+        return;
+      }
+  
+      setStatus("Speaking description...");
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+      utterance.volume = 1.0;
+      utterance.onend = () => setStatus("Snapshot explained.");
+      window.speechSynthesis.speak(utterance);
+  
+    } catch (err) {
+      console.error("❌ Gemini error:", err);
+      setStatus("Gemini request failed");
+    }
+  };
+
 
   const handleLogoClick = () => {
     // Stop any active processes
@@ -338,7 +578,7 @@ const CameraView = () => {
               const waitUntilDone = setInterval(() => {
                 if (!window.__ELEVEN_ACTIVE__) {
                   clearInterval(waitUntilDone);
-                  explainScene();
+                  explainSnapshot();
                 }
               }, 500);
             }
@@ -352,6 +592,8 @@ const CameraView = () => {
 
     return () => {
       liveLoopActiveRef.current = false;
+      window.__LIVE_ACTIVE__ = false;
+      stopLiveListening();
       stopCamera();
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
@@ -633,7 +875,7 @@ const CameraView = () => {
             </button>
 
             <button
-              onClick={explainScene}
+              onClick={explainSnapshot}
               disabled={mode === 'live'}
               className="group relative w-full bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl p-8 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] button-glow hover:from-blue-400 hover:to-blue-500 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
             >

@@ -1,11 +1,11 @@
 # live_detection_with_priority.py
 # Real-time webcam detection + on-frame risk scoring display.
-from fastapi import File, UploadFile
+from fastapi import File, UploadFile # type: ignore
 from return_json import detections_to_json
 from collections import defaultdict
-import cv2
+import cv2 # type: ignore
 import numpy as np
-from ultralytics import YOLO
+from ultralytics import YOLO # type: ignore
 
 from risk_scoring import RiskScorer, Detection
 from google import genai

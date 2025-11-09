@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-const ELEVEN_API_KEY = "sk_28f286edcb53fa29741545903ab8bc06c5a0c5d469410609";
+const ELEVEN_API_KEY = "sk_91fbb79ccbe5e52ff9af287d581fce3a67e11e76a212fb4e";
 const ELEVEN_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"; 
 const GEMINI_API_KEY = "AIzaSyBS4tArjXTEb3rmWeRRb8ZAZPP54YcPTow"
 

@@ -15,7 +15,11 @@ def detections_to_json(scored_detections: List[ScoredDetection], limit: int = 5)
             "distance": s.distance_bucket,
             "priority": round(s.priority, 1),
             "priority_level": s.priority_level,
-            "motion_toward_center": s.motion_toward_center
+            "motion_toward_center": s.motion_toward_center,
+            "x1": int(s.x1),
+            "y1": int(s.y1),
+            "x2": int(s.x2),
+            "y2": int(s.y2),
         })
 
     payload = {

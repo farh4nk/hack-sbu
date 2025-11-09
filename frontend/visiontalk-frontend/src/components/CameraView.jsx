@@ -91,10 +91,44 @@ const listenForCommand = (callback) => {
 const CameraView = () => {
   const videoRef = useRef(null);
   const intervalRef = useRef(null);
+  const canvasRef = useRef(null);
+
   const [isStreaming, setIsStreaming] = useState(false);
   const [mode, setMode] = useState(null);
   const [status, setStatus] = useState('Ready to assist');
   const [detections, setDetections] = useState([]);
+
+  // 👇 paste the drawing useEffect right here
+  useEffect(() => {
+    if (!canvasRef.current || !videoRef.current) return;
+
+    const vw = videoRef.current.videoWidth;
+    const vh = videoRef.current.videoHeight;
+    if (!vw || !vh) return; // wait until video metadata is ready
+
+    const canvas = canvasRef.current;
+    canvas.width = vw;
+    canvas.height = vh;
+    const ctx = canvas.getContext("2d");
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    detections.forEach(det => {
+      const x = det.x1;
+      const y = det.y1;
+      const width = det.x2 - det.x1;
+      const height = det.y2 - det.y1;
+
+      ctx.strokeStyle = det.priority >= 5 ? "red" : det.priority >= 3 ? "orange" : "green";
+      ctx.lineWidth = 3;
+      ctx.strokeRect(x, y, width, height);
+      ctx.font = "16px Sora";
+      ctx.fillStyle = "white";
+      ctx.fillText(det.object, x + 5, Math.max(14, y - 6));
+    });
+  }, [detections]);
+
+
 
   const startCamera = async () => {
     try {
@@ -168,9 +202,19 @@ const CameraView = () => {
         const data = await response.json();
         console.log(data);
 
+        if (data.detections){
+          const parsed = 
+          typeof data.detections == "string"
+          ? JSON.parse(data.detections)
+          : data.detections;
+
+          setDetections(parsed.scene || []);
+        }
+
         if (data.summary){
         speakText(data.summary);
       }
+      setStatus(mode === "live" ? "Monitoring..." : "Ready");
       }, "image/jpeg", 0.8);
 
 
@@ -271,12 +315,7 @@ const CameraView = () => {
       const frame = captureFrame();
       if (!frame) return;
       
-      const result = await analyzeFrame(frame, 'live');
-      
-      if (result?.narration) {
-        // Only speak if there's something important (backend filters this)
-        speakText(result.narration);
-      }
+      await analyzeFrame(frame, 'live');
     }, 2000); // 1 second interval (adjust as needed)
   };
 
@@ -287,6 +326,9 @@ const CameraView = () => {
     }
     setMode(null);
     setStatus('Ready');
+    setDetections([]);
+    const c = canvasRef.current;
+    if (c) c.getContext('2d').clearRect(0, 0, c.width, c.height);
     window.speechSynthesis.cancel();
   };
 
@@ -512,6 +554,10 @@ const CameraView = () => {
                   muted
                   className={`w-full h-full object-cover ${isStreaming ? 'block' : 'hidden'}`}
                 />
+                <canvas
+                  ref = {canvasRef}
+                  className = "absolute top-0 left-0 w-full h-full pointer-events-none"
+                />
                 
                 {!isStreaming && (
                   <div className="absolute inset-0 flex items-center justify-center">
@@ -568,7 +614,7 @@ const CameraView = () => {
                             }`}
                             style={{animationDelay: `${idx * 50}ms`}}
                           >
-                            <span className="font-bold capitalize">{det.label}</span>
+                            <span className="font-bold capitalize">{det.object}</span>
                             <span className="mx-1.5 opacity-50">·</span>
                             <span className="opacity-75">{det.direction}</span>
                           </div>

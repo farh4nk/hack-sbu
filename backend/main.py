@@ -33,7 +33,7 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
-model = YOLO("yolov8s.pt")
+model = YOLO("yolov8m.pt")
 
 scorer = RiskScorer(
     critical_threshold=8.0,

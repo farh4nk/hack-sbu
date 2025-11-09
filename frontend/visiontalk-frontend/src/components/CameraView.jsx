@@ -1,16 +1,17 @@
 import React, { useRef, useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 
-const ELEVEN_API_KEY = "sk_c21de707cdac86954d314ea6395d3ca74120192983274c84";
+const ELEVEN_API_KEY = "sk_28f286edcb53fa29741545903ab8bc06c5a0c5d469410609";
 const ELEVEN_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"; 
+const GEMINI_API_KEY = "AIzaSyBS4tArjXTEb3rmWeRRb8ZAZPP54YcPTow"
 
-  const speakWithElevenLabs = async (text) => {
-    if (window.__ELEVEN_ACTIVE__) {
-  console.log("⏸ Skipping ElevenLabs: already active");
-  return;
-}
+const speakWithElevenLabs = async (text) => {
+  if (window.__ELEVEN_ACTIVE__) {
+    console.log("⏸ Skipping ElevenLabs: already active");
+    return;
+  }
 
   try {
-    // mark ElevenLabs as active to pause browser speech
     window.__ELEVEN_ACTIVE__ = true;
 
     const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${ELEVEN_VOICE_ID}`, {
@@ -33,13 +34,11 @@ const ELEVEN_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
 
-    // flag off when playback ends
     audio.onended = () => {
       console.log("🎧 ElevenLabs finished speaking");
       window.__ELEVEN_ACTIVE__ = false;
     };
 
-    // attempt to play audio
     try {
       await audio.play();
     } catch (playErr) {
@@ -52,8 +51,6 @@ const ELEVEN_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
   }
 };
 
-
-// speech recognition
 const listenForCommand = (callback) => {
   if (!("webkitSpeechRecognition" in window)) {
     console.error("Speech recognition not supported in this browser.");
@@ -73,7 +70,7 @@ const listenForCommand = (callback) => {
     else if (transcript.includes("snapshot") || transcript.includes("scene"))
       callback("snapshot");
     else {
-      speakWithElevenLabs("Sorry, I didn’t catch that. Please say live or snapshot.");
+      speakWithElevenLabs("Sorry, I didn't catch that. Please say live or snapshot.");
       setTimeout(() => listenForCommand(callback), 4000);
     }
   };
@@ -89,6 +86,7 @@ const listenForCommand = (callback) => {
 };
 
 const CameraView = () => {
+  const navigate = useNavigate();
   const videoRef = useRef(null);
   const intervalRef = useRef(null);
   const canvasRef = useRef(null);
@@ -97,6 +95,15 @@ const CameraView = () => {
   const [mode, setMode] = useState(null);
   const [status, setStatus] = useState('Ready to assist');
   const [detections, setDetections] = useState([]);
+  const speechQueueRef = useRef([]);
+  const isSpeakingRef = useRef(false);
+  const liveLoopActiveRef = useRef(false);
+  const modeRef = useRef(mode);
+  const liveRecognitionRef = useRef(null);
+
+  useEffect(() => {
+    modeRef.current = mode;
+  }, [mode]);
 
   // 👇 paste the drawing useEffect right here
   useEffect(() => {
@@ -134,7 +141,7 @@ const CameraView = () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { 
-          facingMode: 'environment', // Use back camera on mobile
+          facingMode: 'environment',
           width: { ideal: 640 },
           height: { ideal: 480 }
         }
@@ -162,7 +169,13 @@ const CameraView = () => {
   };
 
   const captureFrame = () => {
-    if (!videoRef.current) return null;
+    if (
+      !videoRef.current ||
+      !videoRef.current.videoWidth ||
+      !videoRef.current.videoHeight
+    ) {
+      return null;
+    }
     
     const canvas = document.createElement('canvas');
     canvas.width = videoRef.current.videoWidth;
@@ -171,38 +184,48 @@ const CameraView = () => {
     const ctx = canvas.getContext('2d');
     ctx.drawImage(videoRef.current, 0, 0);
     
-    // Return base64 image (JPEG format, 0.8 quality for compression)
-    return canvas.toDataURL('image/jpeg', 0.8);
+    return new Promise((resolve, reject) => {
+      canvas.toBlob(
+        (blob) => {
+          if (blob) {
+            resolve(blob);
+          } else {
+            reject(new Error('Unable to capture frame'));
+          }
+        },
+        'image/jpeg',
+        0.8
+      );
+    });
   };
 
-  const analyzeFrame = async (imageData, userMode) => {
+  const blobToBase64 = (blob) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+
+  const analyzeFrame = async (frameBlob, userMode) => {
+    if (!frameBlob) return null;
+    
     try {
       setStatus(`Analyzing (${userMode} mode)...`);
-      const canvas = document.createElement('canvas');
-      // Ensure canvas matches the video dimensions
-      canvas.width = videoRef.current.videoWidth;
-      canvas.height = videoRef.current.videoHeight;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-      
-      canvas.toBlob(async (blob) => {
-        console.log("converting to blob!")
-        const formData = new FormData();
-        formData.append("frame", blob, "frame.jpg");
-        const response = await fetch('http://localhost:8000/analyze', {
-          method: 'POST',
-        
-          body: formData
-        });
-        // ---- error handling ---- 
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        const data = await response.json();
-        console.log(data);
+      const formData = new FormData();
+      formData.append("frame", frameBlob, "frame.jpg");
 
-        if (data.detections){
+      const response = await fetch('http://localhost:8000/analyze', {
+        method: 'POST',
+        body: formData
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log(data);
+      if (data.detections){
           const parsed = 
           typeof data.detections == "string"
           ? JSON.parse(data.detections)
@@ -211,28 +234,7 @@ const CameraView = () => {
           setDetections(parsed.scene || []);
         }
 
-        if (data.summary){
-        speakText(data.summary);
-      }
-      setStatus(mode === "live" ? "Monitoring..." : "Ready");
-      }, "image/jpeg", 0.8);
-
-
-      
-
-      // const response = await fetch('http://localhost:8000/analyze', {
-      //   method: 'POST',
-      //   headers: {
-      //     'Content-Type': 'application/json',
-      //   },
-      //   body: JSON.stringify({
-      //     image: imageData,
-      //     user_mode: userMode
-      //   })
-      // });
-      
-     
-      // return data; // Should contain { narration, audio_url? }
+      return data;
     } catch (error) {
       console.error('Analysis error:', error);
       setStatus('Analysis failed - check if backend is running');
@@ -240,60 +242,230 @@ const CameraView = () => {
     }
   };
 
-  const speechQueue = [];
-  let isSpeaking = false;
-
   const speakText = (text) => {
+    if (!text) return Promise.resolve();
 
-  if (window.__ELEVEN_ACTIVE__) {
-  console.log("⏸ Skipping browser speech: ElevenLabs active");
-  return;
-}
+    if (window.__ELEVEN_ACTIVE__) {
+      console.log("⏸ Skipping browser speech: ElevenLabs active");
+      return Promise.resolve();
+    }
 
-  // add new text to queue
-  speechQueue.push(text);
-  processQueue();
+    console.log("DATA BEING SAID: ", text);
+    return new Promise(resolve => {
+      speechQueueRef.current.push({ text, resolve });
+      processQueue();
+    });
   };
 
   const processQueue = () => {
-  // if already speaking or nothing to say, stop
-  if (isSpeaking) return;
-  if (speechQueue.length === 0) return;
-
-  // get next sentence
-  const text = speechQueue.shift();
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.rate = 1.0;
-  utterance.pitch = 1.0;
-  utterance.volume = 1.0;
-
-  utterance.onstart = () => {
-    isSpeaking = true;
-    setStatus('Speaking...');
-  };
-
-  utterance.onend = () => {
-    isSpeaking = false;
-
-    // restore correct status after speaking
-    if (mode === 'live') {
-      setStatus('Monitoring...');
-    } else {
-      setStatus('Ready');
-    }
-
-    // check if another sentence is waiting
-    if (speechQueue.length > 0) {
+    if (isSpeakingRef.current) return;
+    if (speechQueueRef.current.length === 0) return;
+  
+    const { text, resolve } = speechQueueRef.current.shift();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+    utterance.volume = 1.0;
+  
+    utterance.onstart = () => {
+      isSpeakingRef.current = true;
+      setStatus('Speaking...');
+    };
+  
+    utterance.onend = () => {
+      isSpeakingRef.current = false;
+      setStatus(modeRef.current === 'live' ? 'Monitoring...' : 'Ready');
+      resolve();
       processQueue();
+    };
+
+    utterance.onerror = (event) => {
+      console.error('Speech synthesis error:', event);
+      isSpeakingRef.current = false;
+      resolve();
+      processQueue();
+    };
+  
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const startLiveMode = async () => {
+    if (liveLoopActiveRef.current) return;
+
+    window.__LIVE_ACTIVE__ = true;
+    liveLoopActiveRef.current = true;
+    setMode('live');
+    setStatus('Live monitoring active');
+
+    listenDuringLive(() => {
+      console.log("🗣️ Heard stop command — stopping live mode...");
+      stopLiveMode();
+    });
+    
+    while (liveLoopActiveRef.current) {
+      try {
+        const frame = await captureFrame();
+        if (!frame) {
+          await new Promise(r => setTimeout(r, 500));
+          continue;
+        }
+
+        const result = await analyzeFrame(frame, 'live');
+        if (result?.summary) {
+          await speakText(result.summary);
+        }
+      } catch (err) {
+        console.error('Live loop error:', err);
+      }
+
+      await new Promise(r => setTimeout(r, 2000));
     }
   };
 
-  // start speaking
-  window.speechSynthesis.speak(utterance);
-};
 
+  // const startLiveMode = () => {
+  //   if (window.__LIVE_ACTIVE__) return; // prevent duplicate starts
+  //   window.__LIVE_ACTIVE__ = true;
+  
+  //   setMode('live');
+  //   setStatus('Live monitoring active');
+  
+  //   // Start listening for voice stop commands
+  //   listenDuringLive(() => {
+  //     console.log("🗣️ Heard stop command — stopping live mode...");
+  //     stopLiveMode();
+  //   });
+  
+  //   // Clear any existing interval just in case
+  //   if (intervalRef.current) {
+  //     clearInterval(intervalRef.current);
+  //   }
+  
+  //   // Repeatedly analyze frames only while active
+  //   intervalRef.current = setInterval(async () => {
+  //     if (!window.__LIVE_ACTIVE__) return; // stop loop if user said "stop"
+  
+  //     const frame = captureFrame();
+  //     if (!frame) return;
+  
+  //     try {
+  //       const result = await analyzeFrame(frame, 'live');
+  //       if (result?.narration) speakText(result.narration);
+  //     } catch (err) {
+  //       console.error('Analysis error:', err);
+  //     }
+  //   }, 2000); // every 2 seconds
+  // };
 
-  // Alternative: Play audio from ElevenLabs URL
+  const stopLiveListening = () => {
+    if (liveRecognitionRef.current) {
+      const recognition = liveRecognitionRef.current;
+      liveRecognitionRef.current = null;
+      recognition.onresult = null;
+      recognition.onerror = null;
+      recognition.onend = null;
+      try {
+        recognition.stop();
+      } catch (err) {
+        console.warn('Speech recognition stop error:', err);
+      }
+    }
+  };
+
+  const stopLiveMode = (announce = true) => {
+    if (!liveLoopActiveRef.current && !window.__LIVE_ACTIVE__) return;
+  
+    console.log("🛑 Stopping live mode...");
+    window.__LIVE_ACTIVE__ = false;
+    liveLoopActiveRef.current = false;
+    stopLiveListening();
+
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+
+    window.speechSynthesis.cancel();
+    speechQueueRef.current = [];
+    isSpeakingRef.current = false;
+
+    setMode(null);
+    setStatus('Ready');
+    setDetections([]);
+    const c = canvasRef.current;
+    if (c) c.getContext('2d').clearRect(0, 0, c.width, c.height);
+
+    if (announce) {
+      speakText("Live mode stopped.");
+    }
+  };
+
+  // const stopLiveMode = () => {
+  //   if (!window.__LIVE_ACTIVE__) return;
+  
+  //   console.log("🛑 Stopping live mode...");
+  //   window.__LIVE_ACTIVE__ = false;
+  
+  //   // stop repeating loop
+  //   if (intervalRef.current) {
+  //     clearInterval(intervalRef.current);
+  //     intervalRef.current = null;
+  //   }
+  
+  //   // cancel any ongoing speech output
+  //   window.speechSynthesis.cancel();
+  
+  //   setMode(null);
+  //   setStatus('Ready');
+  //   speakText("Live mode stopped.");
+  // };
+
+  const listenDuringLive = (stopCallback) => {
+    if (!("webkitSpeechRecognition" in window)) {
+      console.error("Speech recognition not supported in this browser.");
+      return;
+    }
+
+    stopLiveListening();
+
+    const recognition = new window.webkitSpeechRecognition();
+    liveRecognitionRef.current = recognition;
+    recognition.lang = "en-US";
+    recognition.continuous = true;
+    recognition.interimResults = false;
+
+    recognition.onresult = (event) => {
+      const transcript = event.results[event.results.length - 1][0].transcript
+        .toLowerCase()
+        .trim();
+  
+      console.log("🎙️ Live mode heard:", transcript);
+  
+      if (transcript.includes("stop")) {
+        console.log("🗣️ Heard stop, stopping live mode immediately...");
+        stopLiveListening();
+        if (stopCallback) stopCallback();
+      }
+    };
+  
+    recognition.onerror = (e) => {
+      console.error("Speech recognition error during live mode:", e);
+      if (window.__LIVE_ACTIVE__) {
+        setTimeout(() => listenDuringLive(stopCallback), 1000);
+      }
+    };
+  
+    recognition.onend = () => {
+      if (window.__LIVE_ACTIVE__) {
+        console.log("🎧 Restarting live listener...");
+        listenDuringLive(stopCallback);
+      }
+    };
+  
+    recognition.start();
+    console.log("🎧 Listening for 'stop' command during live mode...");
+  };
+
   const playAudioFromURL = (audioUrl) => {
     const audio = new Audio(audioUrl);
     audio.play()
@@ -301,102 +473,177 @@ const CameraView = () => {
       .catch(err => console.error('Audio playback error:', err));
   };
 
-  const startLiveMode = () => {
-    setMode('live');
-    setStatus('Live monitoring active');
-    
-    // Clear any existing interval
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-    }
-    
-    // Capture and analyze every 1 second
-    intervalRef.current = setInterval(async () => {
-      const frame = captureFrame();
-      if (!frame) return;
-      
-      await analyzeFrame(frame, 'live');
-    }, 2000); // 1 second interval (adjust as needed)
-  };
+  
 
-  const stopLiveMode = () => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-    setMode(null);
-    setStatus('Ready');
-    setDetections([]);
-    const c = canvasRef.current;
-    if (c) c.getContext('2d').clearRect(0, 0, c.width, c.height);
-    window.speechSynthesis.cancel();
-  };
 
-   const explainScene = async () => {
+
+
+  const explainScene = async () => {
     setMode('explain');
     
-    const frame = captureFrame();
-    if (!frame) {
-      alert('Unable to capture frame');
+    let frame;
+    try {
+      frame = await captureFrame();
+      if (!frame) {
+        alert('Unable to capture frame');
+        return;
+      }
+    } catch (err) {
+      console.error('Unable to capture frame:', err);
+      setStatus('Unable to capture frame');
       return;
     }
     
     const result = await analyzeFrame(frame, 'explain_scene');
     
-    if (result?.narration) {
-      speakText(result.narration);
+    if (result?.summary) {
+      await speakText(result.summary);
     } else {
       setStatus('No description available');
     }
     
-    // Reset mode after explanation
     setTimeout(() => setMode(null), 1000);
   };
 
-  useEffect(() => {
-  // prevent double execution under React Strict Mode
-  if (window.__VOICE_INIT_DONE__) return;
-  window.__VOICE_INIT_DONE__ = true;
-
-  const initVoicePrompt = async () => {
-    window.speechSynthesis.cancel(); // stop any queued browser voices
-
-    await speakWithElevenLabs(
-      "Welcome to VisionTalk. Would you like to go live and receive real time descriptions of your surroundings, or take a snapshot and describe your current view? Say live or snapshot."
-    );
-
-    const waitForEleven = setInterval(() => {
-      if (!window.__ELEVEN_ACTIVE__) {
-        clearInterval(waitForEleven);
-        listenForCommand(async (command) => {
-          if (command === "live") {
-            speakWithElevenLabs("Starting live mode now.");
-            startLiveMode();
-          } else if (command === "snapshot") {
-  await speakWithElevenLabs("Taking a snapshot now.");
+  const explainSnapshot = async () => {
+    if (!isStreaming) {
+      console.log("⚙️ Camera not active, starting now...");
+      await startCamera();
   
-  // Wait until ElevenLabs finishes
-  const waitUntilDone = setInterval(() => {
-    if (!window.__ELEVEN_ACTIVE__) {
-      clearInterval(waitUntilDone);
-      explainScene();
+      // Wait for the video to fully initialize
+      await new Promise((resolve) => {
+        const check = setInterval(() => {
+          if (videoRef.current && videoRef.current.videoWidth > 0) {
+            clearInterval(check);
+            resolve();
+          }
+        }, 300);
+      });
     }
-  }, 500);
-}
-        });
+  
+    setStatus("Capturing snapshot...");
+    let frameBlob;
+    try {
+      frameBlob = await captureFrame();
+    } catch (err) {
+      console.error("Unable to capture snapshot frame:", err);
+      setStatus("Unable to capture snapshot");
+      return;
+    }
+  
+    if (!frameBlob) {
+      setStatus("Unable to capture snapshot");
+      return;
+    }
+  
+    try {
+      const frameDataUrl = await blobToBase64(frameBlob);
+      setStatus("Generating detailed description...");
+      speakText("Generating detailed description...");
+  
+      // Gemini API request
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  { text: `You are an AI assistant helping visually impaired users understand images. Provide clear, concise descriptions that capture the essential information in 2-3 sentences, focusing on:
+
+1. The main subject or scene
+2. Important people, objects, or text visible
+3. Relevant context like setting, colors, or actions
+
+Be direct and factual. Start with the most important information first. If text is present and legible, read it aloud. Avoid unnecessary phrases like "This image shows" or "The picture contains."` },
+                  { inline_data: { mime_type: "image/jpeg", data: frameDataUrl.split(",")[1] } }
+                ]
+              }
+            ]
+          }),
+        }
+      );
+  
+      const data = await res.json();
+      console.log("🧠 Gemini response:", data);
+  
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+      if (!text) {
+        setStatus("No description returned.");
+        return;
       }
-    }, 1000);
+  
+      setStatus("Speaking description...");
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+      utterance.volume = 1.0;
+      utterance.onend = () => setStatus("Snapshot explained.");
+      window.speechSynthesis.speak(utterance);
+  
+    } catch (err) {
+      console.error("❌ Gemini error:", err);
+      setStatus("Gemini request failed");
+    }
   };
 
-  startCamera();
-  initVoicePrompt();
 
-  return () => {
+  const handleLogoClick = () => {
+    // Stop any active processes
+    stopLiveMode();
     stopCamera();
-    if (intervalRef.current) clearInterval(intervalRef.current);
+    window.speechSynthesis.cancel();
+    
+    // Navigate back to landing page
+    navigate('/');
   };
-}, []);
 
+  useEffect(() => {
+    if (window.__VOICE_INIT_DONE__) return;
+    window.__VOICE_INIT_DONE__ = true;
+
+    const initVoicePrompt = async () => {
+      window.speechSynthesis.cancel();
+
+      await speakWithElevenLabs(
+        "Welcome to Mira. Would you like to go live and receive real time descriptions of your surroundings, or take a snapshot and describe your current view? Say live or snapshot."
+      );
+
+      const waitForEleven = setInterval(() => {
+        if (!window.__ELEVEN_ACTIVE__) {
+          clearInterval(waitForEleven);
+          listenForCommand(async (command) => {
+            if (command === "live") {
+              speakWithElevenLabs("Starting live mode now.");
+              startLiveMode();
+            } else if (command === "snapshot") {
+              await speakWithElevenLabs("Taking a snapshot now.");
+              
+              const waitUntilDone = setInterval(() => {
+                if (!window.__ELEVEN_ACTIVE__) {
+                  clearInterval(waitUntilDone);
+                  explainSnapshot();
+                }
+              }, 500);
+            }
+          });
+        }
+      }, 1000);
+    };
+
+    startCamera();
+    initVoicePrompt();
+
+    return () => {
+      liveLoopActiveRef.current = false;
+      window.__LIVE_ACTIVE__ = false;
+      stopLiveListening();
+      stopCamera();
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#0A0E27] relative overflow-hidden">
@@ -476,10 +723,8 @@ const CameraView = () => {
         }
       `}</style>
 
-      {/* Animated grid background */}
       <div className="fixed inset-0 grid-pattern opacity-30"></div>
       
-      {/* Gradient orbs */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-40 -right-40 w-[500px] h-[500px] bg-emerald-500/10 rounded-full blur-[120px] animate-float"></div>
         <div className="absolute -bottom-40 -left-40 w-[500px] h-[500px] bg-blue-500/10 rounded-full blur-[120px] animate-float" style={{animationDelay: '2s'}}></div>
@@ -487,11 +732,14 @@ const CameraView = () => {
       </div>
 
       <div className="relative z-10 max-w-[1600px] mx-auto px-8 py-12">
-        {/* Header with logo */}
         <div className="mb-12">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-6">
-              <div className="relative group">
+              <button 
+                onClick={handleLogoClick}
+                className="relative group cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2 focus:ring-offset-[#0A0E27] rounded-2xl"
+                aria-label="Return to home"
+              >
                 <div className="absolute inset-0 bg-gradient-to-br from-emerald-400/20 to-emerald-600/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
                 <div className="relative w-16 h-16 bg-gradient-to-br from-emerald-400 to-emerald-600 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-500/25 group-hover:scale-110 transition-transform duration-300">
                   <svg className="w-9 h-9 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -499,14 +747,13 @@ const CameraView = () => {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                   </svg>
                 </div>
-              </div>
+              </button>
               <div>
-                <h1 className="text-4xl font-bold text-white mb-1 tracking-tight">VisionTalk AI</h1>
-                <p className="text-slate-400 text-sm font-medium tracking-wide">INTELLIGENT VISUAL ASSISTANCE</p>
+                <h1 className="text-4xl font-bold text-white mb-1 tracking-tight">Mira</h1>
+                <p className="text-slate-400 text-sm font-medium tracking-wide">MACHINE INTELLIGENT RECOGNITION ASSISTANT</p>
               </div>
             </div>
             
-            {/* Status indicator */}
             <div className={`glass-morphism px-6 py-3 rounded-full transition-all duration-500 ${
               mode === 'live' ? 'animate-pulse-border' : ''
             }`}>
@@ -532,15 +779,12 @@ const CameraView = () => {
           </div>
         </div>
 
-        {/* Main content grid */}
         <div className="grid lg:grid-cols-[1fr_400px] gap-8">
-          {/* Camera viewport */}
           <div className="space-y-6">
             <div className="relative group">
               <div className="absolute -inset-[1px] bg-gradient-to-br from-emerald-500/50 via-blue-500/30 to-emerald-500/50 rounded-3xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
               
               <div className="relative glass-morphism rounded-3xl overflow-hidden" style={{height: '700px'}}>
-                {/* Scan line effect when active */}
                 {mode === 'live' && (
                   <div className="absolute inset-0 z-10 pointer-events-none">
                     <div className="absolute inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-emerald-400 to-transparent scan-line opacity-50"></div>
@@ -576,7 +820,6 @@ const CameraView = () => {
                   </div>
                 )}
 
-                {/* Live recording badge */}
                 {mode === 'live' && (
                   <div className="absolute top-6 left-6">
                     <div className="relative">
@@ -589,7 +832,6 @@ const CameraView = () => {
                   </div>
                 )}
 
-                {/* Detection overlay */}
                 {detections.length > 0 && (
                   <div className="absolute bottom-6 left-6 right-6">
                     <div className="glass-morphism rounded-2xl p-5 border border-white/10">
@@ -626,7 +868,6 @@ const CameraView = () => {
               </div>
             </div>
 
-            {/* Technical specs bar */}
             <div className="glass-morphism rounded-2xl p-4">
               <div className="flex items-center justify-between text-xs">
                 <div className="flex items-center gap-6">
@@ -652,9 +893,7 @@ const CameraView = () => {
             </div>
           </div>
 
-          {/* Control panel */}
           <div className="space-y-6">
-            {/* Live mode button */}
             <button
               onClick={mode === 'live' ? stopLiveMode : startLiveMode}
               className={`group relative w-full rounded-2xl p-8 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] ${
@@ -685,9 +924,8 @@ const CameraView = () => {
               </div>
             </button>
 
-            {/* Explain scene button */}
             <button
-              onClick={explainScene}
+              onClick={explainSnapshot}
               disabled={mode === 'live'}
               className="group relative w-full bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl p-8 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] button-glow hover:from-blue-400 hover:to-blue-500 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
             >
@@ -707,7 +945,6 @@ const CameraView = () => {
               </div>
             </button>
 
-            {/* Feature cards */}
             <div className="space-y-3 pt-4">
               <div className="glass-morphism rounded-xl p-5 border border-emerald-500/20 hover:border-emerald-500/40 hover:bg-emerald-500/5 transition-all duration-300 group">
                 <div className="flex gap-4">

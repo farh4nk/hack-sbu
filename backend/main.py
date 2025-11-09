@@ -48,10 +48,10 @@ async def root():
 async def analyze(frame: UploadFile = File(...)):
     print("reached endpoint.")
     contents = await frame.read()
-
+    
     nparr = np.frombuffer(contents, np.uint8)
     frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-
+    
     if frame is None:
         return {"error": "could not decode image"} 
     

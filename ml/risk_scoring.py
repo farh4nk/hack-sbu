@@ -19,6 +19,7 @@ class Detection:
     conf: float
     cx: int
     cy: int
+    track_id: Optional[int] = None
 
 
 @dataclass
@@ -36,6 +37,7 @@ class ScoredDetection:
     direction: str          # left / center / right
     distance_bucket: str    # far / medium / close
     motion_toward_center: bool
+    track_id: Optional[int] = None
 
 
 class RiskScorer:
@@ -176,6 +178,7 @@ class RiskScorer:
                     direction=self._zone_from_x(d.cx, frame_w),
                     distance_bucket=self._distance_bucket(area_ratio),
                     motion_toward_center=moving_toward,
+                    track_id=d.track_id,
                 )
             )
 

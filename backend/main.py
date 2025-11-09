@@ -1,11 +1,11 @@
 import json
-from fastapi import FastAPI, File, Request, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
-from ultralytics import YOLO
+from fastapi import FastAPI, File, Request, UploadFile # type: ignore
+from fastapi.middleware.cors import CORSMiddleware # type: ignore
+from ultralytics import YOLO # type: ignore
 from pydantic import BaseModel
 from PIL import Image
 import base64
-import cv2
+import cv2 # type: ignore
 import io
 import numpy as np
 # from google import genai
@@ -17,8 +17,8 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ML_DIR = os.path.join(BASE_DIR, "ml")
 sys.path.append(ML_DIR)
 
-from live_detection_with_priority import live_detection_with_priority
-from risk_scoring import RiskScorer
+from live_detection_with_priority import live_detection_with_priority # type: ignore
+from risk_scoring import RiskScorer # type: ignore
 
 
 

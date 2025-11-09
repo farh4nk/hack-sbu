@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-const ELEVEN_API_KEY = "sk_c21de707cdac86954d314ea6395d3ca74120192983274c84";
+const ELEVEN_API_KEY = "sk_28f286edcb53fa29741545903ab8bc06c5a0c5d469410609";
 const ELEVEN_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"; 
 
 const speakWithElevenLabs = async (text) => {
@@ -92,6 +92,14 @@ const CameraView = () => {
   const [mode, setMode] = useState(null);
   const [status, setStatus] = useState('Ready to assist');
   const [detections, setDetections] = useState([]);
+  const speechQueueRef = useRef([]);
+  const isSpeakingRef = useRef(false);
+  const liveLoopActiveRef = useRef(false);
+  const modeRef = useRef(mode);
+
+  useEffect(() => {
+    modeRef.current = mode;
+  }, [mode]);
 
   const startCamera = async () => {
     try {
@@ -125,7 +133,13 @@ const CameraView = () => {
   };
 
   const captureFrame = () => {
-    if (!videoRef.current) return null;
+    if (
+      !videoRef.current ||
+      !videoRef.current.videoWidth ||
+      !videoRef.current.videoHeight
+    ) {
+      return null;
+    }
     
     const canvas = document.createElement('canvas');
     canvas.width = videoRef.current.videoWidth;
@@ -134,38 +148,41 @@ const CameraView = () => {
     const ctx = canvas.getContext('2d');
     ctx.drawImage(videoRef.current, 0, 0);
     
-    return canvas.toDataURL('image/jpeg', 0.8);
+    return new Promise((resolve, reject) => {
+      canvas.toBlob(
+        (blob) => {
+          if (blob) {
+            resolve(blob);
+          } else {
+            reject(new Error('Unable to capture frame'));
+          }
+        },
+        'image/jpeg',
+        0.8
+      );
+    });
   };
 
-  const analyzeFrame = async (imageData, userMode) => {
+  const analyzeFrame = async (frameBlob, userMode) => {
+    if (!frameBlob) return null;
+    
     try {
       setStatus(`Analyzing (${userMode} mode)...`);
-      const canvas = document.createElement('canvas');
-      canvas.width = videoRef.current.videoWidth;
-      canvas.height = videoRef.current.videoHeight;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-      
-      canvas.toBlob(async (blob) => {
-        console.log("converting to blob!")
-        const formData = new FormData();
-        formData.append("frame", blob, "frame.jpg");
-        const response = await fetch('http://localhost:8000/analyze', {
-          method: 'POST',
-          body: formData
-        });
-        
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        const data = await response.json();
-        console.log(data);
+      const formData = new FormData();
+      formData.append("frame", frameBlob, "frame.jpg");
 
-        if (data.summary){
-          speakText(data.summary);
-        }
-      }, "image/jpeg", 0.8);
+      const response = await fetch('http://localhost:8000/analyze', {
+        method: 'POST',
+        body: formData
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log(data);
+      return data;
     } catch (error) {
       console.error('Analysis error:', error);
       setStatus('Analysis failed - check if backend is running');
@@ -173,79 +190,82 @@ const CameraView = () => {
     }
   };
 
-  const speechQueue = [];
-  let isSpeaking = false;
-
   const speakText = (text) => {
+    if (!text) return Promise.resolve();
+
     if (window.__ELEVEN_ACTIVE__) {
       console.log("⏸ Skipping browser speech: ElevenLabs active");
-      return;
+      return Promise.resolve();
     }
 
-    speechQueue.push(text);
-    processQueue();
+    console.log("DATA BEING SAID: ", text);
+    return new Promise(resolve => {
+      speechQueueRef.current.push({ text, resolve });
+      processQueue();
+    });
   };
 
   const processQueue = () => {
-    if (isSpeaking) return;
-    if (speechQueue.length === 0) return;
-
-    const text = speechQueue.shift();
+    if (isSpeakingRef.current) return;
+    if (speechQueueRef.current.length === 0) return;
+  
+    const { text, resolve } = speechQueueRef.current.shift();
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = 1.0;
     utterance.pitch = 1.0;
     utterance.volume = 1.0;
-
+  
     utterance.onstart = () => {
-      isSpeaking = true;
+      isSpeakingRef.current = true;
       setStatus('Speaking...');
     };
-
+  
     utterance.onend = () => {
-      isSpeaking = false;
-
-      if (mode === 'live') {
-        setStatus('Monitoring...');
-      } else {
-        setStatus('Ready');
-      }
-
-      if (speechQueue.length > 0) {
-        processQueue();
-      }
+      isSpeakingRef.current = false;
+      setStatus(modeRef.current === 'live' ? 'Monitoring...' : 'Ready');
+      resolve();
+      processQueue();
     };
 
+    utterance.onerror = (event) => {
+      console.error('Speech synthesis error:', event);
+      isSpeakingRef.current = false;
+      resolve();
+      processQueue();
+    };
+  
     window.speechSynthesis.speak(utterance);
   };
 
-  const playAudioFromURL = (audioUrl) => {
-    const audio = new Audio(audioUrl);
-    audio.play()
-      .then(() => setStatus('Playing audio...'))
-      .catch(err => console.error('Audio playback error:', err));
-  };
+  const startLiveMode = async () => {
+    if (liveLoopActiveRef.current) return;
 
-  const startLiveMode = () => {
+    liveLoopActiveRef.current = true;
     setMode('live');
     setStatus('Live monitoring active');
     
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-    }
-    
-    intervalRef.current = setInterval(async () => {
-      const frame = captureFrame();
-      if (!frame) return;
-      
-      const result = await analyzeFrame(frame, 'live');
-      
-      if (result?.narration) {
-        speakText(result.narration);
+    while (liveLoopActiveRef.current) {
+      try {
+        const frame = await captureFrame();
+        if (!frame) {
+          await new Promise(r => setTimeout(r, 500));
+          continue;
+        }
+
+        const result = await analyzeFrame(frame, 'live');
+        if (result?.summary) {
+          await speakText(result.summary);
+        }
+      } catch (err) {
+        console.error('Live loop error:', err);
       }
-    }, 2000);
+
+      await new Promise(r => setTimeout(r, 2000));
+    }
   };
 
   const stopLiveMode = () => {
+    liveLoopActiveRef.current = false;
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
@@ -253,21 +273,30 @@ const CameraView = () => {
     setMode(null);
     setStatus('Ready');
     window.speechSynthesis.cancel();
+    speechQueueRef.current = [];
+    isSpeakingRef.current = false;
   };
 
   const explainScene = async () => {
     setMode('explain');
     
-    const frame = captureFrame();
-    if (!frame) {
-      alert('Unable to capture frame');
+    let frame;
+    try {
+      frame = await captureFrame();
+      if (!frame) {
+        alert('Unable to capture frame');
+        return;
+      }
+    } catch (err) {
+      console.error('Unable to capture frame:', err);
+      setStatus('Unable to capture frame');
       return;
     }
     
     const result = await analyzeFrame(frame, 'explain_scene');
     
-    if (result?.narration) {
-      speakText(result.narration);
+    if (result?.summary) {
+      await speakText(result.summary);
     } else {
       setStatus('No description available');
     }
@@ -322,6 +351,7 @@ const CameraView = () => {
     initVoicePrompt();
 
     return () => {
+      liveLoopActiveRef.current = false;
       stopCamera();
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
